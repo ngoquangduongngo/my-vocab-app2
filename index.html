@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VocabMaster - Personal Learning Tool</title>
+    <style>
+        :root {
+            --primary: #4a90e2;
+            --secondary: #f39c12;
+            --success: #27ae60;
+            --danger: #e74c3c;
+            --dark: #2c3e50;
+            --light: #f4f7f6;
+            --white: #ffffff;
+        }
+
+        * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+
+        body {
+            background-color: var(--light);
+            color: var(--dark);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        /* Layout & Navigation */
+        .container {
+            width: 100%;
+            max-width: 600px;
+            text-align: center;
+        }
+
+        nav {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 30px;
+        }
+
+        button {
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: transform 0.1s, opacity 0.2s;
+            font-size: 0.9rem;
+        }
+
+        button:active { transform: scale(0.98); }
+        .btn-nav { background: var(--dark); color: white; }
+        .btn-nav.active { background: var(--primary); }
+        .btn-main { background: var(--primary); color: white; width: 100%; font-size: 1.1rem; margin-top: 10px; }
+
+        /* Card Styles */
+        .card {
+            background: var(--white);
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            min-height: 300px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        .view { display: none; }
+        .view.active { display: block; }
+
+        /* Form Styles */
+        input, textarea {
+            width: 100%;
+            padding: 12px;
+            margin: 8px 0;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+
+        /* Study Elements */
+        .word-display { font-size: 2.5rem; font-weight: bold; margin-bottom: 10px; color: var(--primary); }
+        .meaning-display { font-size: 1.8rem; color: var(--secondary); }
+        .sentence-display { font-style: italic; margin-top: 20px; color: #666; font-size: 1.1rem; }
+        
+        .feedback {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+        .correct { background-color: #d4edda; color: var(--success); }
+        .incorrect { background-color: #f8d7da; color: var(--danger); }
+
+        /* Flashcard Flip */
+        .flashcard {
+            perspective: 1000px;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        .empty-state { color: #999; margin-top: 50px; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>VocabMaster</h1>
+        
+        <nav>
+            <button class="btn-nav active" onclick="showView('add-view')">Add Word</button>
+            <button class="btn-nav" onclick="showView('flash-view')">Flashcards</button>
+            <button class="btn-nav" onclick="showView('blank-view')">Fill Blank</button>
+            <button class="btn-nav" onclick="showView('translate-view')">Translate</button>
+        </nav>
+
+        <div id="add-view" class="view active">
+            <div class="card">
+                <h3>Add New Vocabulary</h3>
+                <input type="text" id="add-en" placeholder="English Word (e.g. Serendipity)">
+                <input type="text" id="add-vn" placeholder="Vietnamese Meaning">
+                <input type="text" id="add-ex" placeholder="Example Sentence">
+                <input type="text" id="add-blank" placeholder="Sentence with _ for blank">
+                <button class="btn-main" onclick="saveWord()">Save Word</button>
+                <p id="save-msg"></p>
+            </div>
+        </div>
+
+        <div id="flash-view" class="view">
+            <div class="card flashcard" onclick="flipCard()">
+                <div id="flash-content">
+                    <div class="word-display" id="flash-front">No words added</div>
+                    <div class="meaning-display" id="flash-back" style="display:none"></div>
+                </div>
+            </div>
+            <button class="btn-main" onclick="nextWord('flash')">Next Word</button>
+        </div>
+
+        <div id="blank-view" class="view">
+            <div class="card">
+                <p class="sentence-display" id="blank-sentence">Loading...</p>
+                <input type="text" id="blank-input" placeholder="Type English word">
+                <div id="blank-feedback" class="feedback" style="display:none"></div>
+                <button id="blank-submit" class="btn-main" onclick="checkBlank()">Check Answer</button>
+                <button id="blank-next" class="btn-main" onclick="nextWord('blank')" style="display:none">Next</button>
+            </div>
+        </div>
+
+        <div id="translate-view" class="view">
+            <div class="card">
+                <div class="word-display" id="trans-en">Loading...</div>
+                <input type="text" id="trans-input" placeholder="Type Vietnamese meaning">
+                <div id="trans-feedback" class="feedback" style="display:none"></div>
+                <button id="trans-submit" class="btn-main" onclick="checkTranslate()">Check Answer</button>
+                <button id="trans-next" class="btn-main" onclick="nextWord('translate')" style="display:none">Next</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DATA MANAGEMENT
+        let vocabulary = JSON.parse(localStorage.getItem('vocabData')) || [];
+        let currentIndex = 0;
+
+        function saveWord() {
+            const en = document.getElementById('add-en').value.trim();
+            const vn = document.getElementById('add-vn').value.trim();
+            const ex = document.getElementById('add-ex').value.trim();
+            const blank = document.getElementById('add-blank').value.trim();
+
+            if (!en || !vn) {
+                alert("Please fill English and Vietnamese fields!");
+                return;
+            }
+
+            vocabulary.push({ en, vn, ex, blank });
+            localStorage.setItem('vocabData', JSON.stringify(vocabulary));
+            
+            // Clear inputs
+            document.querySelectorAll('#add-view input').forEach(i => i.value = '');
+            const msg = document.getElementById('save-msg');
+            msg.innerText = "Word saved successfully!";
+            setTimeout(() => msg.innerText = "", 2000);
+        }
+
+        // NAVIGATION
+        function showView(viewId) {
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.querySelectorAll('.btn-nav').forEach(b => b.classList.remove('active'));
+            
+            document.getElementById(viewId).classList.add('active');
+            event.target.classList.add('active');
+
+            if (vocabulary.length === 0 && viewId !== 'add-view') {
+                alert("Add some words first!");
+                showView('add-view');
+                return;
+            }
+
+            currentIndex = Math.floor(Math.random() * vocabulary.length);
+            setupMode(viewId);
+        }
+
+        function setupMode(viewId) {
+            const word = vocabulary[currentIndex];
+            if (!word) return;
+
+            // Reset UI states
+            if (viewId === 'flash-view') {
+                document.getElementById('flash-front').innerText = word.en;
+                document.getElementById('flash-back').innerText = word.vn;
+                document.getElementById('flash-back').style.display = 'none';
+                document.getElementById('flash-front').style.display = 'block';
+            } else if (viewId === 'blank-view') {
+                document.getElementById('blank-sentence').innerText = word.blank || "No blank sentence provided.";
+                document.getElementById('blank-input').value = '';
+                document.getElementById('blank-feedback').style.display = 'none';
+                document.getElementById('blank-submit').style.display = 'block';
+                document.getElementById('blank-next').style.display = 'none';
+            } else if (viewId === 'translate-view') {
+                document.getElementById('trans-en').innerText = word.en;
+                document.getElementById('trans-input').value = '';
+                document.getElementById('trans-feedback').style.display = 'none';
+                document.getElementById('trans-submit').style.display = 'block';
+                document.getElementById('trans-next').style.display = 'none';
+            }
+        }
+
+        function nextWord(mode) {
+            currentIndex = Math.floor(Math.random() * vocabulary.length);
+            setupMode(mode + '-view');
+        }
+
+        // STUDY LOGIC
+        function flipCard() {
+            const front = document.getElementById('flash-front');
+            const back = document.getElementById('flash-back');
+            if (front.style.display === 'none') {
+                front.style.display = 'block';
+                back.style.display = 'none';
+            } else {
+                front.style.display = 'none';
+                back.style.display = 'block';
+            }
+        }
+
+        // Normalization function for accents and casing
+        function normalizeStr(str) {
+            return str.toLowerCase()
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .replace(/[đĐ]/g, m => m === 'đ' ? 'd' : 'D')
+                .trim();
+        }
+
+        function checkBlank() {
+            const userAns = normalizeStr(document.getElementById('blank-input').value);
+            const correctAns = normalizeStr(vocabulary[currentIndex].en);
+            showFeedback('blank', userAns === correctAns, vocabulary[currentIndex].en);
+        }
+
+        function checkTranslate() {
+            const userAns = normalizeStr(document.getElementById('trans-input').value);
+            const correctAns = normalizeStr(vocabulary[currentIndex].vn);
+            showFeedback('trans', userAns === correctAns, vocabulary[currentIndex].vn);
+        }
+
+        function showFeedback(prefix, isCorrect, correctText) {
+            const feedback = document.getElementById(prefix + '-feedback');
+            const userVal = document.getElementById(prefix + '-input').value;
+            
+            feedback.style.display = 'block';
+            feedback.className = 'feedback ' + (isCorrect ? 'correct' : 'incorrect');
+            feedback.innerHTML = isCorrect ? 
+                `Perfect! Correct answer.` : 
+                `Incorrect. <br>Your answer: ${userVal} <br>Correct answer: ${correctText}`;
+            
+            document.getElementById(prefix + '-submit').style.display = 'none';
+            document.getElementById(prefix + '-next').style.display = 'block';
+        }
+    </script>
+</body>
+</html>
